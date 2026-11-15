@@ -1,0 +1,9 @@
+
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://daily-khata-sr6q.onrender.com/api/:path*"
+    }
+  ]
+}
