@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Package } from 'lucide-react'
 
 const PRODUCT_IMAGES: Array<{ match: (name: string) => boolean; src: string }> = [
@@ -8,10 +8,11 @@ const PRODUCT_IMAGES: Array<{ match: (name: string) => boolean; src: string }> =
   { match: name => name.includes('toast') || name.includes('rusk'), src: 'https://www.asiacontinental.co.uk/cdn/shop/files/bi-22_884x.jpg?v=1756741312' },
 ]
 
-export default function ProductImage({ name, className = '' }: { name: string; className?: string }) {
+export default function ProductImage({ name, className = '', imageData }: { name: string; className?: string; imageData?: string | null }) {
   const normalized = name.toLowerCase()
-  const source = PRODUCT_IMAGES.find(item => item.match(normalized))?.src
+  const source = imageData || PRODUCT_IMAGES.find(item => item.match(normalized))?.src
   const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [source])
   if (!source || failed) return <div className={`flex shrink-0 items-center justify-center rounded-xl bg-[#F2F0E9] text-[#192D4C]/55 ${className}`}><Package size={28}/></div>
   return <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white ${className}`}>
     <img src={source} alt={name} loading="lazy" className="h-full w-full object-contain p-1" onError={() => setFailed(true)} />

@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import FastAPI, APIRouter, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, String, ForeignKey, Numeric, Date, Boolean, select
+from sqlalchemy import create_engine, String, ForeignKey, Numeric, Date, Boolean, Text, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
 
 engine = create_engine(os.getenv("DATABASE_URL", "postgresql+psycopg2://khata:khata@localhost:5432/khata"), pool_pre_ping=True)
@@ -22,6 +22,7 @@ class Product(Base):
     category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
     unit: Mapped[str] = mapped_column(String(30), default="piece")
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2)); active: Mapped[bool] = mapped_column(Boolean, default=True)
+    image_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     category: Mapped[Optional[Category]] = relationship(lazy="joined")
 class Purchase(Base):
     __tablename__ = "purchases"
@@ -43,6 +44,7 @@ def db():
 class ProductIn(BaseModel):
     name: str = Field(min_length=1, max_length=120); brand: str = ""; category_id: Optional[int] = None
     unit: str = "piece"; price: Decimal = Field(ge=0); active: bool = True
+    image_data: Optional[str] = None
 class ItemIn(BaseModel):
     product_id: int; quantity: Decimal = Field(gt=0); unit_price: Optional[Decimal] = Field(default=None, ge=0)
 class PurchaseIn(BaseModel):
@@ -51,7 +53,7 @@ class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
 
 def pj(p: Product): return dict(id=p.id, name=p.name, brand=p.brand, category_id=p.category_id,
-    category=p.category.name if p.category else "", unit=p.unit, price=float(p.price), active=p.active)
+    category=p.category.name if p.category else "", unit=p.unit, price=float(p.price), active=p.active, image_data=p.image_data)
 def uj(p: Purchase): return dict(id=p.id, date=p.date.isoformat(), note=p.note, total=float(sum(i.subtotal for i in p.items)),
     items=[dict(id=i.id, product_id=i.product_id, name=i.product_name, category=i.category_name,
                 quantity=float(i.quantity), unit_price=float(i.unit_price), subtotal=float(i.subtotal)) for i in p.items])
@@ -138,7 +140,7 @@ def purchases(start: Optional[dt.date] = None, end: Optional[dt.date] = None, pr
 
 def summarize(s: Session, start: Optional[dt.date], end: Optional[dt.date]):
     q = select(Purchase)
-    if start: q = q.where(Purchase.date >= start)  # inclusive both ends
+    if start: q = q.where(Purchase.date >= start)
     if end: q = q.where(Purchase.date <= end)
     ps = list(s.scalars(q))
     by_day, by_prod, by_cat, milk = {}, {}, {}, 0.0

@@ -1,5 +1,5 @@
-export type Product = { id:number; name:string; brand:string; category_id:number|null; category:string; unit:string; price:number; active:boolean }
-export type Item = { id:number; name:string; category:string; quantity:number; unit_price:number; subtotal:number }
+export type Product = { id:number; name:string; brand:string; category_id:number|null; category:string; unit:string; price:number; active:boolean; image_data?:string|null }
+export type Item = { id:number; product_id?:number|null; name:string; category:string; quantity:number; unit_price:number; subtotal:number }
 export type Purchase = { id:number; date:string; note:string; total:number; items:Item[] }
 export type Summary = { total:number; entries:number; milk_quantity:number; days:number; average_daily:number; highest_day:{date:string;total:number}|null;
   products:{name:string;quantity:number;total:number}[]; categories:{name:string;total:number}[]; daily:{date:string;total:number}[] }
