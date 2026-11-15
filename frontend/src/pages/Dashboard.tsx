@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { api, inr, dmy, Summary, Purchase } from '../api'
+import BrandLoader from '../components/BrandLoader'
 type D = { today_total:number; month:Summary; last7:{date:string;total:number}[]; recent:Purchase[] }
 const COLORS=['#172B4D','#B9DCEB','#B9DCC8','#7aa5c4','#8fc4a8']
 export default function Dashboard({go}:{go:(t:string)=>void}){
   const [d,setD]=useState<D|null>(null); const [err,setErr]=useState('')
   useEffect(()=>{api.get<D>('/dashboard').then(setD).catch(e=>setErr(e.message))},[])
   if(err) return <p className="card text-red-700">Can’t reach the server. {err}</p>
-  if(!d) return <p className="text-navy/60">Loading…</p>
+  if(!d) return <BrandLoader compact/>
   const stats=[['Today',inr(d.today_total)],['This month',inr(d.month.total)],['Milk this month',`${d.month.milk_quantity} pouches`],['Entries this month',String(d.month.entries)]]
   return <div className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-extrabold">Dashboard</h1>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-extrabold">Welcome to Qureshi's House</h1>
       <div className="flex gap-2"><button className="btn" onClick={()=>go('add')}>Add purchase</button><button className="btn-soft" onClick={()=>go('calc')}>Calculate total</button></div></div>
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{stats.map(([l,v],i)=><div key={l} className={`card ${i===0?'bg-mint':''}`}><div className="text-xs text-navy/60">{l}</div><div className="mt-1 text-xl font-extrabold">{v}</div></div>)}</div>
     <div className="grid gap-4 md:grid-cols-5">
