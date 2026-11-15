@@ -1,10 +1,10 @@
-import os, datetime as dt
+import os, datetime as dt, json, hmac
 from decimal import Decimal
 from typing import Optional
-from fastapi import FastAPI, APIRouter, Depends, HTTPException
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, String, ForeignKey, Numeric, Date, Boolean, Text, select
+from sqlalchemy import create_engine, String, ForeignKey, Numeric, Date, Boolean, Text, DateTime, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
 
 engine = create_engine(os.getenv("DATABASE_URL", "postgresql+psycopg2://khata:khata@localhost:5432/khata"), pool_pre_ping=True)
@@ -37,6 +37,13 @@ class Item(Base):
     product_name: Mapped[str] = mapped_column(String(160)); category_name: Mapped[str] = mapped_column(String(60), default="")
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2)); unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(Text)
+    auth: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
 
 def db():
     with SessionLocal() as s: yield s
@@ -51,6 +58,9 @@ class PurchaseIn(BaseModel):
     date: dt.date; note: str = ""; items: list[ItemIn] = Field(min_length=1)
 class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
+class PushKeys(BaseModel):
+    endpoint: str = Field(min_length=20)
+    keys: dict[str, str]
 
 def pj(p: Product): return dict(id=p.id, name=p.name, brand=p.brand, category_id=p.category_id,
     category=p.category.name if p.category else "", unit=p.unit, price=float(p.price), active=p.active, image_data=p.image_data)
@@ -103,7 +113,7 @@ def edit_product(pid: int, b: ProductIn, s: Session = Depends(db)):
 def del_product(pid: int, s: Session = Depends(db)):
     p = s.get(Product, pid)
     if not p: raise HTTPException(404, "Not found")
-    s.delete(p); s.commit(); return {"ok": True}  # history keeps name + price snapshots
+    s.delete(p); s.commit(); return {"ok": True}
 
 def fill(p: Purchase, b: PurchaseIn, s: Session):
     p.date, p.note = b.date, b.note; p.items.clear()
@@ -173,5 +183,58 @@ def dashboard(today: Optional[dt.date] = None, s: Session = Depends(db)):
     ds = [(t - dt.timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     recent = [uj(p) for p in s.scalars(select(Purchase).order_by(Purchase.date.desc(), Purchase.id.desc()).limit(5))]
     return dict(today_total=summarize(s, t, t)["total"], month=m, last7=[dict(date=d, total=wd.get(d, 0)) for d in ds], recent=recent)
+
+# Web Push: one subscription is stored for each browser/device that opts in.
+@r.get("/push/public-key")
+def push_public_key():
+    key = os.getenv("VAPID_PUBLIC_KEY", "")
+    if not key: raise HTTPException(503, "Push notifications are not configured yet")
+    return {"publicKey": key}
+
+@r.post("/push/subscribe")
+def push_subscribe(b: PushKeys, s: Session = Depends(db)):
+    if not b.keys.get("p256dh") or not b.keys.get("auth"):
+        raise HTTPException(400, "Invalid push subscription keys")
+    sub = s.scalar(select(PushSubscription).where(PushSubscription.endpoint == b.endpoint))
+    if sub is None:
+        s.add(PushSubscription(endpoint=b.endpoint, p256dh=b.keys["p256dh"], auth=b.keys["auth"]))
+    else:
+        sub.p256dh, sub.auth = b.keys["p256dh"], b.keys["auth"]
+    s.commit()
+    return {"ok": True}
+
+@r.delete("/push/subscribe")
+def push_unsubscribe(b: PushKeys, s: Session = Depends(db)):
+    sub = s.scalar(select(PushSubscription).where(PushSubscription.endpoint == b.endpoint))
+    if sub:
+        s.delete(sub); s.commit()
+    return {"ok": True}
+
+@r.post("/internal/send-daily-reminder")
+def send_daily_reminder(authorization: Optional[str] = Header(default=None), s: Session = Depends(db)):
+    expected = os.getenv("DAILY_REMINDER_TOKEN", "")
+    supplied = (authorization or "").removeprefix("Bearer ").strip()
+    if not expected or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(401, "Unauthorized")
+    private_key = os.getenv("VAPID_PRIVATE_KEY", "")
+    if not os.getenv("VAPID_PUBLIC_KEY") or not private_key:
+        raise HTTPException(503, "VAPID keys are not configured")
+    from pywebpush import webpush, WebPushException
+    payload = json.dumps({"title":"Qureshi's House","body":"Aaj ki purchases add karna mat bhoolna! ❤️","url":"/","tag":"daily-purchase-reminder"}, ensure_ascii=False)
+    subscriptions = list(s.scalars(select(PushSubscription)))
+    sent = removed = failed = 0
+    for sub in subscriptions:
+        try:
+            webpush(subscription_info={"endpoint":sub.endpoint,"keys":{"p256dh":sub.p256dh,"auth":sub.auth}},
+                    data=payload, vapid_private_key=private_key,
+                    vapid_claims={"sub":os.getenv("VAPID_SUBJECT","mailto:tltechnologics@gmail.com")}, ttl=3600)
+            sent += 1
+        except WebPushException as exc:
+            status = getattr(getattr(exc,"response",None),"status_code",None)
+            if status in (404,410): s.delete(sub); removed += 1
+            else: failed += 1
+        except Exception: failed += 1
+    s.commit()
+    return {"ok":True,"sent":sent,"removed_expired":removed,"failed":failed}
 
 app.include_router(r)

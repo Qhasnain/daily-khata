@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "Qureshi's House",
+  "short_name": "Qureshi's House",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F8F6F0",
+  "theme_color": "#F8F6F0",
+  "description": "Qureshi's House \u2014 Our Home. Our Essentials.",
+  "icons": [
+    {
+      "src": "/q-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

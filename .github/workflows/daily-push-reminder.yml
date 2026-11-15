@@ -1,0 +1,21 @@
+name: Qureshi's House Daily Push Reminder
+on:
+  schedule:
+    # 23:00 Asia/Kolkata = 17:30 UTC
+    - cron: "30 17 * * *"
+  workflow_dispatch:
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send daily purchase reminder
+        env:
+          REMINDER_URL: ${{ secrets.DAILY_REMINDER_API_URL }}
+          REMINDER_TOKEN: ${{ secrets.DAILY_REMINDER_TOKEN }}
+        run: |
+          test -n "$REMINDER_URL" || (echo "Missing DAILY_REMINDER_API_URL secret" && exit 1)
+          test -n "$REMINDER_TOKEN" || (echo "Missing DAILY_REMINDER_TOKEN secret" && exit 1)
+          curl --fail --silent --show-error --max-time 60 \
+            -X POST "$REMINDER_URL" \
+            -H "Authorization: Bearer $REMINDER_TOKEN" \
+            -H "Content-Type: application/json"
